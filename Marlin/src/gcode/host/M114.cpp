@@ -170,7 +170,7 @@
 
     SERIAL_ECHOPGM("FromStp:");
     get_cartesian_from_steppers();  // writes 'cartes' (with forward kinematics)
-    xyze_pos_t from_steppers = LOGICAL_AXIS_ARRAY(planner.get_axis_position_mm(E_AXIS), cartes.x, cartes.y, cartes.z);
+    xyze_pos_t from_steppers = { cartes.x, cartes.y, cartes.z, planner.get_axis_position_mm(E_AXIS) };
     report_all_axis_pos(from_steppers);
 
     const xyze_float_t diff = from_steppers - leveled;
@@ -190,8 +190,8 @@
  *   E - Report E stepper position (Requires M114_DETAIL)
  *   R - Report the realtime position instead of projected.
  */
-void GcodeSuite::M114() {
-
+void GcodeSuite::M114()
+{
   #if ENABLED(M114_DETAIL)
     if (parser.seen_test('D')) {
       #if DISABLED(M114_LEGACY)

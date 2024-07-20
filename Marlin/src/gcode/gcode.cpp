@@ -35,7 +35,9 @@ GcodeSuite gcode;
 #include "parser.h"
 #include "queue.h"
 #include "../module/motion.h"
-
+#if ENABLED(AUTO_BED_LEVELING_BILINEAR)
+  #include "../feature/bedlevel/bedlevel.h"
+#endif
 #if ENABLED(PRINTCOUNTER)
   #include "../module/printcounter.h"
 #endif
@@ -66,6 +68,11 @@ GcodeSuite gcode;
 #endif
 
 #include "../MarlinCore.h" // for idle, kill
+#if ENABLED(RTS_AVAILABLE)
+  #include "../lcd/dwin/lcd_rts.h"
+#elif ENABLED(DWIN_CREALITY_LCD)
+  #include "../lcd/dwin/e3v2/dwin.h"
+#endif
 
 // Inactivity shutdown
 millis_t GcodeSuite::previous_move_ms = 0,
@@ -74,11 +81,11 @@ millis_t GcodeSuite::previous_move_ms = 0,
 
 // Relative motion mode for each logical axis
 static constexpr xyze_bool_t ar_init = AXIS_RELATIVE_MODES;
-uint8_t GcodeSuite::axis_relative = 0 LOGICAL_AXIS_GANG(
-  | (ar_init.e << REL_E),
-  | (ar_init.x << REL_X),
-  | (ar_init.y << REL_Y),
-  | (ar_init.z << REL_Z)
+uint8_t GcodeSuite::axis_relative = (
+    (ar_init.x ? _BV(REL_X) : 0)
+  | (ar_init.y ? _BV(REL_Y) : 0)
+  | (ar_init.z ? _BV(REL_Z) : 0)
+  | (ar_init.e ? _BV(REL_E) : 0)
 );
 
 #if EITHER(HAS_AUTO_REPORTING, HOST_KEEPALIVE_FEATURE)
@@ -161,15 +168,13 @@ void GcodeSuite::get_destination_from_command() {
       destination[i] = current_position[i];
   }
 
-  #if HAS_EXTRUDERS
-    // Get new E position, whether absolute or relative
-    if ( (seen.e = parser.seenval('E')) ) {
-      const float v = parser.value_axis_units(E_AXIS);
-      destination.e = axis_is_relative(E_AXIS) ? current_position.e + v : v;
-    }
-    else
-      destination.e = current_position.e;
-  #endif
+  // Get new E position, whether absolute or relative
+  if ( (seen.e = parser.seenval('E')) ) {
+    const float v = parser.value_axis_units(E_AXIS);
+    destination.e = axis_is_relative(E_AXIS) ? current_position.e + v : v;
+  }
+  else
+    destination.e = current_position.e;
 
   #if ENABLED(POWER_LOSS_RECOVERY) && !PIN_EXISTS(POWER_LOSS)
     // Only update power loss recovery on moves with E
@@ -250,12 +255,19 @@ void GcodeSuite::dwell(millis_t time) {
 
   void GcodeSuite::G29_with_retry() {
     uint8_t retries = G29_MAX_RETRIES;
-    while (G29()) { // G29 should return true for failed probes ONLY
-      if (retries) {
+    while (G29())
+    {
+      // G29 should return true for failed probes ONLY
+      if (retries)
+      {
         event_probe_recover();
         --retries;
       }
-      else {
+      else
+      {
+        // Leveling_Error();//调平失败弹出报错界面
+        Popup_window_boot(Level_faild_QR);//弹出调平失败二维码界面
+        delay(10);
         event_probe_failure();
         return;
       }
@@ -348,7 +360,12 @@ void GcodeSuite::process_parsed_command(const bool no_ok/*=false*/) {
         case 27: G27(); break;                                    // G27: Nozzle Park
       #endif
 
-      case 28: G28(); break;                                      // G28: Home one or more axes
+      case 28:
+        G28();
+        #if HAS_LEVELING
+          set_bed_leveling_enabled(true);
+        #endif
+        break;                                                    // G28: Home all axes, one at a time
 
       #if HAS_LEVELING
         case 29:                                                  // G29: Bed leveling calibration
@@ -422,7 +439,12 @@ void GcodeSuite::process_parsed_command(const bool no_ok/*=false*/) {
       #if ENABLED(DEBUG_GCODE_PARSER)
         case 800: parser.debug(); break;                          // G800: GCode Parser Test for G
       #endif
-
+#if ENABLED(USE_AUTOZ_TOOL)
+      case 212: doG212ExCmd(); break;
+#endif
+#if ENABLED(USE_AUTOZ_TOOL_2)
+      case 212: gcodeG212(); break;
+#endif
       default: parser.unknown_command_warning(); break;
     }
     break;
@@ -506,6 +528,8 @@ void GcodeSuite::process_parsed_command(const bool no_ok/*=false*/) {
         case 48: M48(); break;                                    // M48: Z probe repeatability test
       #endif
 
+      case 72: M72(); break;                                      // M72: Cloud print filename
+
       #if ENABLED(LCD_SET_PROGRESS_MANUALLY)
         case 73: M73(); break;                                    // M73: Set progress percentage (for display on LCD)
       #endif
@@ -517,6 +541,8 @@ void GcodeSuite::process_parsed_command(const bool no_ok/*=false*/) {
       #if ENABLED(PRINTCOUNTER)
         case 78: M78(); break;                                    // M78: Show print statistics
       #endif
+
+      case 79: M79(); break;                                      // M79: Cloud print statistics
 
       #if ENABLED(M100_FREE_MEMORY_WATCHER)
         case 100: M100(); break;                                  // M100: Free Memory Report
@@ -845,6 +871,10 @@ void GcodeSuite::process_parsed_command(const bool no_ok/*=false*/) {
         case 575: M575(); break;                                  // M575: Set serial baudrate
       #endif
 
+    #if HAS_SHAPING
+        case 593: M593(); break;                                  // M593: Set Input Shaping parameters
+      #endif
+      
       #if ENABLED(ADVANCED_PAUSE_FEATURE)
         case 600: M600(); break;                                  // M600: Pause for Filament Change
         case 603: M603(); break;                                  // M603: Configure Filament Change
@@ -986,6 +1016,11 @@ void GcodeSuite::process_parsed_command(const bool no_ok/*=false*/) {
         case 997: M997(); break;                                  // M997: Perform in-application firmware update
       #endif
 
+      #if ENABLED(HAS_CREALITY_WIFI)
+        case 930: M930(); break;                                  // M930: Support Creality WIFI Box
+        case 936: M936(); break;                                  // M936: OTA update firmware.
+      #endif
+
       case 999: M999(); break;                                    // M999: Restart after being Stopped
 
       #if ENABLED(POWER_LOSS_RECOVERY)
@@ -1007,6 +1042,10 @@ void GcodeSuite::process_parsed_command(const bool no_ok/*=false*/) {
 
       #if ENABLED(MAX7219_GCODE)
         case 7219: M7219(); break;                                // M7219: Set LEDs, columns, and rows
+      #endif
+
+      #if ANY(USE_AUTOZ_TOOL,USE_AUTOZ_TOOL_2)
+        case 8015 : M8015(); break;                               // M8015: One key to obtain the Z offset value
       #endif
 
       default: parser.unknown_command_warning(); break;

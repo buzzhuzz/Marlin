@@ -35,10 +35,8 @@
 #include <HardwareSerial.h>
 #include <SPI.h>
 
-enum StealthIndex : uint8_t {
-  LOGICAL_AXIS_LIST(STEALTH_AXIS_E, STEALTH_AXIS_X, STEALTH_AXIS_Y, STEALTH_AXIS_Z)
-};
-#define TMC_INIT(ST, STEALTH_INDEX) tmc_init(stepper##ST, ST##_CURRENT, ST##_MICROSTEPS, ST##_HYBRID_THRESHOLD, stealthchop_by_axis[STEALTH_INDEX], chopper_timing_##ST, ST##_INTERPOLATE)
+enum StealthIndex : uint8_t { STEALTH_AXIS_XY, STEALTH_AXIS_Z, STEALTH_AXIS_E };
+#define TMC_INIT(ST, STEALTH_INDEX) tmc_init(stepper##ST, ST##_CURRENT, ST##_MICROSTEPS, ST##_HYBRID_THRESHOLD, stealthchop_by_axis[STEALTH_INDEX], chopper_timing_##ST, ST##_INTERPOLATE,ST##_HOLD_MULTIPLIER)
 
 //   IC = TMC model number
 //   ST = Stepper object letter
@@ -353,7 +351,7 @@ enum StealthIndex : uint8_t {
     #endif
   #endif
 
-  enum TMCAxis : uint8_t { LINEAR_AXIS_LIST(X, Y, Z), X2, Y2, Z2, Z3, Z4, E0, E1, E2, E3, E4, E5, E6, E7, TOTAL };
+  enum TMCAxis : uint8_t { X, Y, Z, X2, Y2, Z2, Z3, Z4, E0, E1, E2, E3, E4, E5, E6, E7, TOTAL };
 
   void tmc_serial_begin() {
     #if HAS_TMC_HW_SERIAL
@@ -484,13 +482,14 @@ enum StealthIndex : uint8_t {
   }
 #endif
 
-#if HAS_DRIVER(TMC2208)
+#if HAS_DRIVER(TMC2208)  //2208-2209配置
   template<char AXIS_LETTER, char DRIVER_ID, AxisEnum AXIS_ID>
-  void tmc_init(TMCMarlin<TMC2208Stepper, AXIS_LETTER, DRIVER_ID, AXIS_ID> &st, const uint16_t mA, const uint16_t microsteps, const uint32_t hyb_thrs, const bool stealth, const chopper_timing_t &chop_init, const bool interpolate) {
+  void tmc_init(TMCMarlin<TMC2208Stepper, AXIS_LETTER, DRIVER_ID, AXIS_ID> &st, const uint16_t mA, const uint16_t microsteps, const uint32_t hyb_thrs, const bool stealth, const chopper_timing_t &chop_init, const bool interpolate,float hold_current) {
     TMC2208_n::GCONF_t gconf{0};
     gconf.pdn_disable = true; // Use UART
-    gconf.mstep_reg_select = true; // Select microsteps with UART
     gconf.i_scale_analog = false;
+    gconf.mstep_reg_select = true; // Select microsteps with UART
+    
     gconf.en_spreadcycle = !stealth;
     st.GCONF(gconf.sr);
     st.stored.stealthChop_enabled = stealth;
@@ -504,7 +503,7 @@ enum StealthIndex : uint8_t {
     TERN_(SQUARE_WAVE_STEPPING, chopconf.dedge = true);
     st.CHOPCONF(chopconf.sr);
 
-    st.rms_current(mA, HOLD_MULTIPLIER);
+    st.rms_current(mA, hold_current);
     st.microsteps(microsteps);
     st.iholddelay(10);
     st.TPOWERDOWN(128); // ~2s until driver lowers to hold current
@@ -528,11 +527,12 @@ enum StealthIndex : uint8_t {
 
 #if HAS_DRIVER(TMC2209)
   template<char AXIS_LETTER, char DRIVER_ID, AxisEnum AXIS_ID>
-  void tmc_init(TMCMarlin<TMC2209Stepper, AXIS_LETTER, DRIVER_ID, AXIS_ID> &st, const uint16_t mA, const uint16_t microsteps, const uint32_t hyb_thrs, const bool stealth, const chopper_timing_t &chop_init, const bool interpolate) {
+  void tmc_init(TMCMarlin<TMC2209Stepper, AXIS_LETTER, DRIVER_ID, AXIS_ID> &st, const uint16_t mA, const uint16_t microsteps, const uint32_t hyb_thrs, const bool stealth, const chopper_timing_t &chop_init, const bool interpolate,float hold_current) {
     TMC2208_n::GCONF_t gconf{0};
     gconf.pdn_disable = true; // Use UART
     gconf.mstep_reg_select = true; // Select microsteps with UART
     gconf.i_scale_analog = false;
+    // gconf.i_scale_analog = true; //内部参考电压
     gconf.en_spreadcycle = !stealth;
     st.GCONF(gconf.sr);
     st.stored.stealthChop_enabled = stealth;
@@ -546,7 +546,8 @@ enum StealthIndex : uint8_t {
     TERN_(SQUARE_WAVE_STEPPING, chopconf.dedge = true);
     st.CHOPCONF(chopconf.sr);
 
-    st.rms_current(mA, HOLD_MULTIPLIER);
+    st.rms_current(mA, hold_current);
+    // st.rms_current(mA, HOLD_MULTIPLIER);
     st.microsteps(microsteps);
     st.iholddelay(10);
     st.TPOWERDOWN(128); // ~2s until driver lowers to hold current
@@ -718,24 +719,19 @@ void restore_trinamic_drivers() {
 }
 
 void reset_trinamic_drivers() {
-  static constexpr bool stealthchop_by_axis[] = LOGICAL_AXIS_ARRAY(
-    ENABLED(STEALTHCHOP_E),
-    ENABLED(STEALTHCHOP_XY),
-    ENABLED(STEALTHCHOP_XY),
-    ENABLED(STEALTHCHOP_Z)
-  );
+  static constexpr bool stealthchop_by_axis[] = { ENABLED(STEALTHCHOP_XY), ENABLED(STEALTHCHOP_Z), ENABLED(STEALTHCHOP_E) };
 
   #if AXIS_IS_TMC(X)
-    TMC_INIT(X, STEALTH_AXIS_X);
+    TMC_INIT(X, STEALTH_AXIS_XY);
   #endif
   #if AXIS_IS_TMC(X2)
-    TMC_INIT(X2, STEALTH_AXIS_X);
+    TMC_INIT(X2, STEALTH_AXIS_XY);
   #endif
   #if AXIS_IS_TMC(Y)
-    TMC_INIT(Y, STEALTH_AXIS_Y);
+    TMC_INIT(Y, STEALTH_AXIS_XY);
   #endif
   #if AXIS_IS_TMC(Y2)
-    TMC_INIT(Y2, STEALTH_AXIS_Y);
+    TMC_INIT(Y2, STEALTH_AXIS_XY);
   #endif
   #if AXIS_IS_TMC(Z)
     TMC_INIT(Z, STEALTH_AXIS_Z);
@@ -799,7 +795,7 @@ void reset_trinamic_drivers() {
         stepperZ4.homing_threshold(CAT(TERN(Z4_SENSORLESS, Z4, Z), _STALL_SENSITIVITY));
       #endif
     #endif
-  #endif // USE SENSORLESS
+  #endif
 
   #ifdef TMC_ADV
     TMC_ADV()

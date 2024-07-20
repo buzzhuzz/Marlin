@@ -76,7 +76,7 @@
 // Feedrate for manual moves
 #ifdef MANUAL_FEEDRATE
   constexpr xyze_feedrate_t _mf = MANUAL_FEEDRATE,
-           manual_feedrate_mm_s = LOGICAL_AXIS_ARRAY(_mf.e / 60.0f, _mf.x / 60.0f, _mf.y / 60.0f, _mf.z / 60.0f);
+                            manual_feedrate_mm_s { _mf.x / 60.0f, _mf.y / 60.0f, _mf.z / 60.0f, _mf.e / 60.0f };
 #endif
 
 #if IS_KINEMATIC && HAS_JUNCTION_DEVIATION
@@ -107,6 +107,11 @@ enum BlockFlagBit : char {
   #if ENABLED(LASER_SYNCHRONOUS_M106_M107)
     , BLOCK_BIT_SYNC_FANS
   #endif
+
+    // Sync laser power from a queued block
+  #if ENABLED(LASER_POWER_SYNC)
+    , BLOCK_BIT_LASER_PWR
+  #endif
 };
 
 enum BlockFlag : char {
@@ -120,16 +125,19 @@ enum BlockFlag : char {
   #if ENABLED(LASER_SYNCHRONOUS_M106_M107)
     , BLOCK_FLAG_SYNC_FANS          = _BV(BLOCK_BIT_SYNC_FANS)
   #endif
+  #if ENABLED(LASER_POWER_SYNC)
+    , BLOCK_FLAG_LASER_PWR          = _BV(BLOCK_BIT_LASER_PWR)
+  #endif  
 };
 
-#define BLOCK_MASK_SYNC ( BLOCK_FLAG_SYNC_POSITION | TERN0(LASER_SYNCHRONOUS_M106_M107, BLOCK_FLAG_SYNC_FANS) )
+#define BLOCK_MASK_SYNC ( BLOCK_FLAG_SYNC_POSITION | TERN0(LASER_SYNCHRONOUS_M106_M107, BLOCK_FLAG_SYNC_FANS) | TERN0(LASER_POWER_SYNC, BLOCK_FLAG_LASER_PWR ))
 
-#if ENABLED(LASER_POWER_INLINE)
+#if ENABLED(LASER_FEATURE)
 
   typedef struct {
-    bool isPlanned:1;
-    bool isEnabled:1;
+    bool isEnabled:1;         // Set to engage the inline laser power output.
     bool dir:1;
+    bool isPowered:1;         // Set on any parsed G1, G2, G3, or G5 powered move, cleared on G0 and G28.
     bool Reserved:6;
   } power_status_t;
 
@@ -238,7 +246,7 @@ typedef struct block_t {
     uint32_t sdpos;
   #endif
 
-  #if ENABLED(LASER_POWER_INLINE)
+  #if ENABLED(LASER_FEATURE)
     block_laser_t laser;
   #endif
 
@@ -250,7 +258,7 @@ typedef struct block_t {
 
 #define BLOCK_MOD(n) ((n)&(BLOCK_BUFFER_SIZE-1))
 
-#if ENABLED(LASER_POWER_INLINE)
+#if ENABLED(LASER_FEATURE)
   typedef struct {
     /**
      * Laser status flags
@@ -303,7 +311,8 @@ typedef struct {
   typedef IF<(BLOCK_BUFFER_SIZE > 64), uint16_t, uint8_t>::type last_move_t;
 #endif
 
-class Planner {
+class Planner
+{
   public:
 
     /**
@@ -356,7 +365,7 @@ class Planner {
 
     static planner_settings_t settings;
 
-    #if ENABLED(LASER_POWER_INLINE)
+    #if ENABLED(LASER_FEATURE)
       static laser_state_t laser_inline;
     #endif
 
@@ -571,6 +580,7 @@ class Planner {
         static float z_fade_factor = 1;
         if (!z_fade_height) return 1;
         if (rz >= z_fade_height) return 0;
+        if(rz <= 0.3) return 1;  //rock_20230710
         if (last_fade_z != rz) {
           last_fade_z = rz;
           z_fade_factor = 1 - rz * inverse_z_fade_height;
@@ -735,9 +745,8 @@ class Planner {
      * Add a block to the buffer that just updates the position or in
      * case of LASER_SYNCHRONOUS_M106_M107 the fan pwm
      */
-    static void buffer_sync_block(
-      TERN_(LASER_SYNCHRONOUS_M106_M107, uint8_t sync_flag=BLOCK_FLAG_SYNC_POSITION)
-    );
+    static void buffer_sync_block();
+    static void buffer_sync_block(uint8_t sync_flag);
 
   #if IS_KINEMATIC
     private:
@@ -758,8 +767,7 @@ class Planner {
      *  extruder    - target extruder
      *  millimeters - the length of the movement, if known
      */
-    static bool buffer_segment(
-      LOGICAL_AXIS_LIST(const_float_t e, const_float_t a, const_float_t b, const_float_t c)
+    static bool buffer_segment(const_float_t a, const_float_t b, const_float_t c, const_float_t e
       OPTARG(HAS_DIST_MM_ARG, const xyze_float_t &cart_dist_mm)
       , const_feedRate_t fr_mm_s, const uint8_t extruder, const_float_t millimeters=0.0
     );
@@ -768,11 +776,9 @@ class Planner {
       OPTARG(HAS_DIST_MM_ARG, const xyze_float_t &cart_dist_mm)
       , const_feedRate_t fr_mm_s, const uint8_t extruder, const_float_t millimeters=0.0
     ) {
-      return buffer_segment(
-        LOGICAL_AXIS_LIST(abce.e, abce.a, abce.b, abce.c)
+      return buffer_segment(abce.a, abce.b, abce.c, abce.e
         OPTARG(HAS_DIST_MM_ARG, cart_dist_mm)
-        , fr_mm_s, extruder, millimeters
-      );
+        , fr_mm_s, extruder, millimeters);
     }
 
   public:
@@ -788,18 +794,14 @@ class Planner {
      *  millimeters  - the length of the movement, if known
      *  inv_duration - the reciprocal if the duration of the movement, if known (kinematic only if feeedrate scaling is enabled)
      */
-    static bool buffer_line(
-      LOGICAL_AXIS_LIST(const_float_t e, const_float_t rx, const_float_t ry, const_float_t rz)
-      , const feedRate_t &fr_mm_s, const uint8_t extruder, const float millimeters=0.0
+    static bool buffer_line(const_float_t rx, const_float_t ry, const_float_t rz, const_float_t e, const_feedRate_t fr_mm_s, const uint8_t extruder, const float millimeters=0.0
       OPTARG(SCARA_FEEDRATE_SCALING, const_float_t inv_duration=0.0)
     );
 
     FORCE_INLINE static bool buffer_line(const xyze_pos_t &cart, const_feedRate_t fr_mm_s, const uint8_t extruder, const float millimeters=0.0
       OPTARG(SCARA_FEEDRATE_SCALING, const_float_t inv_duration=0.0)
     ) {
-      return buffer_line(
-        LOGICAL_AXIS_LIST(cart.e, cart.x, cart.y, cart.z)
-        , fr_mm_s, extruder, millimeters
+      return buffer_line(cart.x, cart.y, cart.z, cart.e, fr_mm_s, extruder, millimeters
         OPTARG(SCARA_FEEDRATE_SCALING, inv_duration)
       );
     }
@@ -821,16 +823,9 @@ class Planner {
      *
      * Clears previous speed values.
      */
-    static void set_position_mm(
-      LOGICAL_AXIS_LIST(const_float_t e, const_float_t rx, const_float_t ry, const_float_t rz)
-    );
-    FORCE_INLINE static void set_position_mm(const xyze_pos_t &cart) {
-      set_position_mm(LOGICAL_AXIS_LIST(cart.e, cart.x, cart.y, cart.z, cart.i, cart.j, cart.k));
-    }
-
-    #if HAS_EXTRUDERS
-      static void set_e_position_mm(const_float_t e);
-    #endif
+    static void set_position_mm(const_float_t rx, const_float_t ry, const_float_t rz, const_float_t e);
+    FORCE_INLINE static void set_position_mm(const xyze_pos_t &cart) { set_position_mm(cart.x, cart.y, cart.z, cart.e); }
+    static void set_e_position_mm(const_float_t e);
 
     /**
      * Set the planner.position and individual stepper positions.
@@ -838,12 +833,8 @@ class Planner {
      * The supplied position is in machine space, and no additional
      * conversions are applied.
      */
-    static void set_machine_position_mm(
-      LOGICAL_AXIS_LIST(const_float_t e, const_float_t a, const_float_t b, const_float_t c)
-    );
-    FORCE_INLINE static void set_machine_position_mm(const abce_pos_t &abce) {
-      set_machine_position_mm(LOGICAL_AXIS_LIST(abce.e, abce.a, abce.b, abce.c));
-    }
+    static void set_machine_position_mm(const_float_t a, const_float_t b, const_float_t c, const_float_t e);
+    FORCE_INLINE static void set_machine_position_mm(const abce_pos_t &abce) { set_machine_position_mm(abce.a, abce.b, abce.c, abce.e); }
 
     /**
      * Get an axis position according to stepper position(s)
@@ -852,10 +843,12 @@ class Planner {
     static float get_axis_position_mm(const AxisEnum axis);
 
     static inline abce_pos_t get_axis_positions_mm() {
-      const abce_pos_t out = LOGICAL_AXIS_ARRAY(
-        get_axis_position_mm(E_AXIS),
-        get_axis_position_mm(A_AXIS), get_axis_position_mm(B_AXIS), get_axis_position_mm(C_AXIS)
-      );
+      const abce_pos_t out = {
+        get_axis_position_mm(A_AXIS),
+        get_axis_position_mm(B_AXIS),
+        get_axis_position_mm(C_AXIS),
+        get_axis_position_mm(E_AXIS)
+      };
       return out;
     }
 

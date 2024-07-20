@@ -361,8 +361,7 @@ void Endstops::event_handler() {
   prev_hit_state = hit_state;
   if (hit_state) {
     #if HAS_STATUS_MESSAGE
-      char LINEAR_AXIS_LIST(chrX = ' ', chrY = ' ', chrZ = ' '),
-           chrP = ' ';
+      char chrX = ' ', chrY = ' ', chrZ = ' ', chrP = ' ';
       #define _SET_STOP_CHAR(A,C) (chr## A = C)
     #else
       #define _SET_STOP_CHAR(A,C) NOOP
@@ -391,13 +390,7 @@ void Endstops::event_handler() {
     #endif
     SERIAL_EOL();
 
-    TERN_(HAS_STATUS_MESSAGE,
-      ui.status_printf_P(0,
-        PSTR(S_FMT GANG_N_1(LINEAR_AXES, " %c") " %c"),
-        GET_TEXT(MSG_LCD_ENDSTOPS),
-        LINEAR_AXIS_LIST(chrX, chrY, chrZ), chrP
-      )
-    );
+    TERN_(HAS_STATUS_MESSAGE, ui.status_printf_P(0, PSTR(S_FMT " %c %c %c %c"), GET_TEXT(MSG_LCD_ENDSTOPS), chrX, chrY, chrZ, chrP));
 
     #if BOTH(SD_ABORT_ON_ENDSTOP_HIT, SDSUPPORT)
       if (planner.abort_on_endstop_hit) {
@@ -480,6 +473,32 @@ void _O2 Endstops::report_states() {
   #if BOTH(MARLIN_DEV_MODE, PROBE_ACTIVATION_SWITCH)
     print_es_state(probe_switch_activated(), PSTR(STR_PROBE_EN));
   #endif
+  if(axis_is_trusted(X_AXIS))
+  {
+    SERIAL_ECHOLNPGM("test_axis_known_x_flag = true");
+  }
+  else
+  {
+    SERIAL_ECHOLNPGM("test_axis_known_x_flag = false");
+  }
+
+  if(axis_is_trusted(Y_AXIS))
+  {
+    SERIAL_ECHOLNPGM("test_axis_known_y_flag = true");
+  }
+  else
+  {
+    SERIAL_ECHOLNPGM("test_axis_known_y_flag = false");
+  }
+
+  if(axis_is_trusted(Z_AXIS))
+  {
+    SERIAL_ECHOLNPGM("test_axis_known_z_flag = true");
+  }
+  else
+  {
+    SERIAL_ECHOLNPGM("test_axis_known_z_flag = false");
+  }
   #if HAS_CUSTOM_PROBE_PIN
     print_es_state(PROBE_TRIGGERED(), PSTR(STR_Z_PROBE));
   #endif

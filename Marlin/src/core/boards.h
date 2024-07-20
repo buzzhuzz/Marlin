@@ -159,6 +159,7 @@
 #define BOARD_PICA_REVB               1324  // PICA Shield (original version)
 #define BOARD_PICA                    1325  // PICA Shield (rev C or later)
 #define BOARD_INTAMSYS40              1326  // Intamsys 4.0 (Funmat HT)
+#define BOARD_MALYAN_M180             1327  // Malyan M180 Mainboard Version 2 (no display function, direct gcode only)
 
 //
 // ATmega1281, ATmega2561
@@ -344,6 +345,7 @@
 #define BOARD_BEAST                   4047  // STM32F103RET6 Libmaple-based controller
 #define BOARD_MINGDA_MPX_ARM_MINI     4048  // STM32F103ZET6 Mingda MD-16
 #define BOARD_GTM32_PRO_VD            4049  // STM32F103VET6 controller
+#define BOARD_CREALITY_V3_GD303       4050  // Creality GD303 (STM32F103RE)
 
 //
 // ARM Cortex-M4F

@@ -103,9 +103,6 @@
   #undef THERMAL_PROTECTION_PERIOD
   #undef WATCH_TEMP_PERIOD
   #undef SHOW_TEMP_ADC_VALUES
-  #undef LCD_SHOW_E_TOTAL
-  #undef MANUAL_E_MOVES_RELATIVE
-  #undef STEALTHCHOP_E
 #endif
 
 #if TEMP_SENSOR_BED == 0
@@ -485,23 +482,6 @@
   #endif
 #endif
 
-// Remove unused STEALTHCHOP flags
-#if LINEAR_AXES < 6
-  #undef STEALTHCHOP_K
-  #if LINEAR_AXES < 5
-    #undef STEALTHCHOP_J
-    #if LINEAR_AXES < 4
-      #undef STEALTHCHOP_I
-      #if LINEAR_AXES < 3
-        #undef STEALTHCHOP_Z
-        #if LINEAR_AXES < 2
-          #undef STEALTHCHOP_Y
-        #endif
-      #endif
-    #endif
-  #endif
-#endif
-
 //
 // SD Card connection methods
 // Defined here so pins and sanity checks can use them
@@ -560,4 +540,16 @@
 #endif
 #if EITHER(MEATPACK_ON_SERIAL_PORT_1, MEATPACK_ON_SERIAL_PORT_2)
   #define HAS_MEATPACK 1
+#endif
+
+
+// Input shaping
+// Marlin 2.0.8没有定义HAS_Y_AXIS
+// #if !HAS_Y_AXIS
+//   #undef INPUT_SHAPING_Y
+//   #undef SHAPING_FREQ_Y
+//   #undef SHAPING_BUFFER_Y
+// #endif
+#if EITHER(INPUT_SHAPING_X, INPUT_SHAPING_Y)
+   #define HAS_SHAPING 1
 #endif

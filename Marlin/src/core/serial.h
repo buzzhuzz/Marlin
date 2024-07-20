@@ -277,6 +277,8 @@ void serialprintPGM(PGM_P str);
 
 #define SERIAL_ECHO_SP(C)           serial_spaces(C)
 
+#define PRINT_LOG(V...)      do{ SERIAL_ECHO_START(); SERIAL_ECHOPAIR( " ", __FUNCTION__, ": ", __LINE__, ": "); SERIAL_ECHOPAIR(V); SERIAL_EOL();}while(0)
+
 #define SERIAL_ECHO_TERNARY(TF, PRE, ON, OFF, POST) serial_ternary(TF, PSTR(PRE), PSTR(ON), PSTR(OFF), PSTR(POST))
 
 #if SERIAL_FLOAT_PRECISION
@@ -310,13 +312,10 @@ void serialprint_truefalse(const bool tf);
 void serial_spaces(uint8_t count);
 
 void print_bin(const uint16_t val);
-void print_pos(
-  LINEAR_AXIS_LIST(const_float_t x, const_float_t y, const_float_t z),
-  PGM_P const prefix=nullptr, PGM_P const suffix=nullptr
-);
+void print_pos(const_float_t x, const_float_t y, const_float_t z, PGM_P const prefix=nullptr, PGM_P const suffix=nullptr);
 
 inline void print_pos(const xyz_pos_t &xyz, PGM_P const prefix=nullptr, PGM_P const suffix=nullptr) {
-  print_pos(LINEAR_AXIS_LIST(xyz.x, xyz.y, xyz.z), prefix, suffix);
+  print_pos(xyz.x, xyz.y, xyz.z, prefix, suffix);
 }
 
 #define SERIAL_POS(SUFFIX,VAR) do { print_pos(VAR, PSTR("  " STRINGIFY(VAR) "="), PSTR(" : " SUFFIX "\n")); }while(0)

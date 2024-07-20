@@ -205,14 +205,16 @@
  *  Y   Home to the Y endstop
  *  Z   Home to the Z endstop
  */
-void GcodeSuite::G28() {
+void GcodeSuite::G28()
+{
   DEBUG_SECTION(log_G28, "G28", DEBUGGING(LEVELING));
   if (DEBUGGING(LEVELING)) log_machine_info();
 
   TERN_(LASER_MOVE_G28_OFF, cutter.set_inline_enabled(false));  // turn off laser
 
   TERN_(FULL_REPORT_TO_HOST_FEATURE, set_and_report_grblstate(M_HOMING));
-
+  home_flag = true;
+  HMI_flag.home_flag = true;
   #if ENABLED(DUAL_X_CARRIAGE)
     bool IDEX_saved_duplication_state = extruder_duplication_enabled;
     DualXMode IDEX_saved_mode = dual_x_carriage_mode;
@@ -321,23 +323,12 @@ void GcodeSuite::G28() {
 
   #else
 
-    #define _UNSAFE(A) (homeZ && TERN0(Z_SAFE_HOMING, axes_should_home(_BV(A##_AXIS))))
-
     const bool homeZ = parser.seen_test('Z'),
-               LINEAR_AXIS_LIST( // Other axes should be homed before Z safe-homing
-                 needX = _UNSAFE(X), needY = _UNSAFE(Y), needZ = false // UNUSED
-               ),
-               LINEAR_AXIS_LIST( // Home each axis if needed or flagged
-                 homeX = needX || parser.seen_test('X'),
-                 homeY = needY || parser.seen_test('Y'),
-                 homeZZ = homeZ // UNUSED
-               ),
-               // Home-all if all or none are flagged
-               home_all = true LINEAR_AXIS_GANG(&& homeX == homeX, && homeX == homeY, && homeX == homeZ),
-               LINEAR_AXIS_LIST(doX = home_all || homeX, doY = home_all || homeY, doZ = home_all || homeZ);
-
-   UNUSED(needZ);
-   UNUSED(homeZZ);
+               needX = homeZ && TERN0(Z_SAFE_HOMING, axes_should_home(_BV(X_AXIS))),
+               needY = homeZ && TERN0(Z_SAFE_HOMING, axes_should_home(_BV(Y_AXIS))),
+               homeX = needX || parser.seen_test('X'), homeY = needY || parser.seen_test('Y'),
+               home_all = homeX == homeY && homeX == homeZ, // All or None
+               doX = home_all || homeX, doY = home_all || homeY, doZ = home_all || homeZ;
 
     #if ENABLED(HOME_Z_FIRST)
 
@@ -347,7 +338,8 @@ void GcodeSuite::G28() {
 
     const float z_homing_height = parser.seenval('R') ? parser.value_linear_units() : Z_HOMING_HEIGHT;
 
-    if (z_homing_height && (0 LINEAR_AXIS_GANG(|| doX, || doY, || TERN0(Z_SAFE_HOMING, doZ)))) {
+    if (z_homing_height && (doX || doY || TERN0(Z_SAFE_HOMING, doZ)))
+    {
       // Raise Z before homing any other axes and z is not already high enough (never lower z)
       if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("Raise Z (before homing) by ", z_homing_height);
       do_z_clearance(z_homing_height);
@@ -398,7 +390,8 @@ void GcodeSuite::G28() {
 
     // Home Z last if homing towards the bed
     #if DISABLED(HOME_Z_FIRST)
-      if (doZ) {
+      if (doZ)
+      {
         #if EITHER(Z_MULTI_ENDSTOPS, Z_STEPPER_AUTO_ALIGN)
           stepper.set_all_z_lock(false);
           stepper.set_separate_multi_axis(false);
@@ -458,6 +451,7 @@ void GcodeSuite::G28() {
   #endif
 
   TERN_(HAS_LEVELING, set_bed_leveling_enabled(leveling_restore_state));
+  // set_bed_leveling_enabled(true);
 
   restore_feedrate_and_scaling();
 
@@ -480,14 +474,18 @@ void GcodeSuite::G28() {
     #if HAS_CURRENT_HOME(Y2)
       stepperY2.rms_current(tmc_save_current_Y2);
     #endif
-  #endif // HAS_HOMING_CURRENT
+  #endif
 
   ui.refresh();
 
-  TERN_(DWIN_CREALITY_LCD, DWIN_CompletedHoming());
+  
   TERN_(EXTENSIBLE_UI, ExtUI::onHomingComplete());
 
+  
   report_current_position();
+
+  // Enable automatic compensation function rock_2021.07.17
+  process_subcommands_now_P(PSTR("M420 S1 Z10"));
 
   if (ENABLED(NANODLP_Z_SYNC) && (doZ || ENABLED(NANODLP_ALL_AXIS)))
     SERIAL_ECHOLNPGM(STR_Z_MOVE_COMP);
@@ -501,11 +499,22 @@ void GcodeSuite::G28() {
     static constexpr AxisEnum L64XX_axis_xref[MAX_L64XX] = {
       X_AXIS, Y_AXIS, Z_AXIS,
       X_AXIS, Y_AXIS, Z_AXIS, Z_AXIS,
-      E_AXIS, E_AXIS, E_AXIS, E_AXIS, E_AXIS, E_AXIS, E_AXIS, E_AXIS
+      E_AXIS, E_AXIS, E_AXIS, E_AXIS, E_AXIS, E_AXIS
     };
     for (uint8_t j = 1; j <= L64XX::chain[0]; j++) {
       const uint8_t cv = L64XX::chain[j];
       L64xxManager.set_param((L64XX_axis_t)cv, L6470_ABS_POS, stepper.position(L64XX_axis_xref[cv]));
     }
   #endif
+   //PRINT_LOG("(HMI_flag.abort_end_flag:",HMI_flag.abort_end_flag);
+  if(!HMI_flag.abort_end_flag)  TERN_(DWIN_CREALITY_LCD, DWIN_CompletedHoming());  //回零完成标志位
+  // {
+  //   PRINT_LOG("checkkey3333:",checkkey);
+  //   DWIN_CompletedHoming();
+    
+  //   PRINT_LOG("(HMI_flag.abort_end_flag123:",HMI_flag.abort_end_flag);
+  // }
+  home_flag = false;
+  // rock_21211104, Prevent back to zero operation after automatic leveling.
+  HMI_flag.power_back_to_zero_flag = true;
 }

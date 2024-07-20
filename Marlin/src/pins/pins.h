@@ -270,6 +270,8 @@
   #include "mega/pins_PICAOLD.h"                // ATmega2560                             env:mega2560
 #elif MB(INTAMSYS40)
   #include "mega/pins_INTAMSYS40.h"             // ATmega2560                             env:mega2560
+#elif MB(MALYAN_M180)
+  #include "mega/pins_MALYAN_M180.h"            // ATmega2560                             env:mega2560
 
 //
 // ATmega1281, ATmega2561
@@ -552,6 +554,8 @@
   #include "stm32f1/pins_CREALITY_V452.h"       // STM32F1                                env:STM32F103RET6_creality
 #elif MB(CREALITY_V453)
   #include "stm32f1/pins_CREALITY_V453.h"       // STM32F1                                env:STM32F103RET6_creality
+#elif MB(CREALITY_S1)
+  #include "stm32f1/pins_CREALITY_S1.h"         // STM32F1                                env:STM32F103RET6_creality
 #elif MB(TRIGORILLA_PRO)
   #include "stm32f1/pins_TRIGORILLA_PRO.h"      // STM32F1                                env:trigorilla_pro
 #elif MB(FLY_MINI)
@@ -562,6 +566,9 @@
   #include "stm32f1/pins_BEAST.h"               // STM32F1                                env:STM32F103RE
 #elif MB(MINGDA_MPX_ARM_MINI)
   #include "stm32f1/pins_MINGDA_MPX_ARM_MINI.h" // STM32F1                                env:STM32F103RE
+#elif MB(CREALITY_V3_GD303)
+#include "stm32f1/pins_CREALITY_V3_GD303.h"   // STM32F1                                env:STM32F103RET6_creality
+ 
 
 //
 // ARM Cortex-M4F
@@ -630,6 +637,8 @@
   #include "stm32f4/pins_ANET_ET4P.h"           // STM32F4                                env:Anet_ET4_OpenBLT
 #elif MB(FYSETC_CHEETAH_V20)
   #include "stm32f4/pins_FYSETC_CHEETAH_V20.h"  // STM32F4                                env:FYSETC_CHEETAH_V20
+#elif MB(CREALITY_S1_F401RC)
+  #include "stm32f4/pins_CREALITY_S1_F401RC.h"  // STM32F4                                env:STM32F401RC_creality
 
 //
 // ARM Cortex M7
